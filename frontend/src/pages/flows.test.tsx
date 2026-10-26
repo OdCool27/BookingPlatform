@@ -17,6 +17,22 @@ const account = {
 };
 const reply = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status });
+it.each(["ADMIN", "GUEST"])("uses the authenticated %s type without forbidden role probes", async (accountType) => {
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+    calls.push(path);
+    return path.endsWith("/login") ? reply({ ...account, accountType }) : reply([]);
+  }));
+  render(<AuthProvider><App /></AuthProvider>);
+  await login();
+  await screen.findByRole("button", { name: "Log out" });
+  expect(calls).not.toContain("/api/v1/properties/mine");
+  expect(calls).not.toContain("/api/v1/bookings");
+  if (accountType === "ADMIN") {
+    expect(screen.queryByRole("link", { name: "My bookings" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "My properties" })).toBeNull();
+  } else expect(screen.getByRole("link", { name: "My bookings" })).toBeTruthy();
+});
 async function login() {
   fireEvent.change(screen.getByLabelText("Email"), {
     target: { value: account.email },

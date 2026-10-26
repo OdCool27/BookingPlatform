@@ -68,7 +68,7 @@ function Workspace() {
           >
             Explore
           </a>
-          <a
+          {session!.role !== "admin" && <a
             href={session!.role === "owner" ? "#/owner" : "#/bookings"}
             aria-current={
               route === "/owner" || route.startsWith("/bookings")
@@ -77,7 +77,7 @@ function Workspace() {
             }
           >
             {session!.role === "owner" ? "My properties" : "My bookings"}
-          </a>
+          </a>}
         </nav>
         <div className="account">
           <span>

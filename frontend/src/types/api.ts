@@ -8,8 +8,9 @@ export interface Account {
   firstName: string;
   lastName: string;
   activated: boolean;
+  accountType?: "ADMIN" | "GUEST" | "OWNER" | null;
 }
-export type Role = "owner" | "guest";
+export type Role = "owner" | "guest" | "admin";
 export interface Registration extends Credentials {
   accountType: "GUEST" | "OWNER";
   firstName: string;

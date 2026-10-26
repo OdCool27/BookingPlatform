@@ -16,7 +16,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   async function login(credentials: Credentials) {
     const account = await api.login(credentials);
-    const role = await detectRole(credentials);
+    // Trust the authenticated server response, not a user-selected role. The fallback supports
+    // older guest/owner backends; admins must not be sent through guest-only role probes.
+    const roles: Record<string, Role> = { ADMIN: "admin", GUEST: "guest", OWNER: "owner" };
+    const role = (account.accountType && roles[account.accountType]) || await detectRole(credentials);
     setSession({ account, credentials, role });
   }
   return (

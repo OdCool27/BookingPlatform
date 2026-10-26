@@ -74,6 +74,10 @@ public class AuthService {
         if(guest != null) return guest;
         PropertyOwner owner = PropertyOwnerDAO.getOwnerByEmail(email);
         if(owner != null) return owner;
+        // Admin is an existing employee role. Authentication does not grant guest/owner privileges.
+        Employee employee = EmployeeDAO.retrieveEmployeeByEmail(email);
+        if(employee != null && employee.getJobRole() == Employee.Role.ADMIN && employee.getTerminationDate() == null)
+            return employee;
         throw new ServiceException(FORBIDDEN,"Account type is not supported by V1");
     }
     public void activate(String emailAddress, String password, String code) {

@@ -190,8 +190,9 @@ public class EmployeeDAO {
                     String empEmail = rs.getString("email");
                     Employee.AccessLevel access = Employee.AccessLevel.valueOf(rs.getString("accessLevel"));
                     Employee.Role jobRole = Employee.Role.valueOf(rs.getString("jobRole"));
-                    LocalDate hireDate = rs.getDate("hireDate").toLocalDate();
-                    LocalDate terminationDate = rs.getDate("terminationDate").toLocalDate();
+                    // V3 stores ISO text and active employees have no termination date.
+                    LocalDate hireDate = SQLiteValues.date(rs.getString("hireDate"));
+                    LocalDate terminationDate = SQLiteValues.date(rs.getString("terminationDate"));
 
                     User u = UserDAO.getUserByEmail(empEmail);
 

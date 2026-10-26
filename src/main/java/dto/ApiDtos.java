@@ -12,8 +12,13 @@ public final class ApiDtos {
                            User.Gender gender,String contactNum,String nationality,LocalDate dob,List<String> preferences) {}
     public record Login(String email,String password) {}
     public record Activation(String email,String password,String code) {}
-    public record Account(int userId,String email,String firstName,String lastName,boolean activated) {
-        public static Account from(User u) { return new Account(u.getUserID(),u.getEmail(),u.getFirstName(),u.getLastName(),u.isActivated()); }
+    public record Account(int userId,String email,String firstName,String lastName,boolean activated,String accountType) {
+        public static Account from(User u) {
+            // Report the persisted subtype so clients need not infer identity from failed resource requests.
+            String type = u instanceof Guest ? "GUEST" : u instanceof PropertyOwner ? "OWNER"
+                    : u instanceof Employee employee && employee.getJobRole() == Employee.Role.ADMIN ? "ADMIN" : null;
+            return new Account(u.getUserID(),u.getEmail(),u.getFirstName(),u.getLastName(),u.isActivated(),type);
+        }
     }
     public record Message(String message) {}
     public record Error(String code,String message) {}

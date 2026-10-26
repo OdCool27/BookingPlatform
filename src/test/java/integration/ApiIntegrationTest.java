@@ -85,6 +85,22 @@ class ApiIntegrationTest {
         return new BookingInput(property,LocalDate.parse(start),LocalDate.parse(end));
     }
 
+    @Test void seededAccountsCanLoginWithoutGainingOtherAccountPrivileges() throws Exception {
+        String[][] accounts = {{"odanecollins@live.com","Collins@2026","ADMIN"},
+                {"john.smith@example.com","Smith@2026","GUEST"},
+                {"phil.collins@example.com","Phil@2026","OWNER"}};
+        for(String[] account : accounts) {
+            var response = request("POST","/api/v1/auth/login",new Login(account[0],account[1]),null);
+            assertEquals(200,response.statusCode(),response.body());
+            assertEquals(account[2],Json.MAPPER.readTree(response.body()).get("accountType").asText());
+            assertFalse(response.body().contains("passwordHash"));
+        }
+        String admin = "Basic " + Base64.getEncoder().encodeToString("odanecollins@live.com:Collins@2026".getBytes(StandardCharsets.UTF_8));
+        assertEquals(200,request("GET","/api/v1/properties",null,admin).statusCode());
+        assertEquals(403,request("GET","/api/v1/bookings",null,admin).statusCode());
+        assertEquals(403,request("GET","/api/v1/properties/mine",null,admin).statusCode());
+    }
+
     @Test void healthAndExactMethodRouting() throws Exception {
         assertEquals(200,request("GET","/health",null,null).statusCode());
         assertEquals(200,request("GET","/api/v1/health",null,null).statusCode());

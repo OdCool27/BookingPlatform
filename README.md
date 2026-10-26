@@ -1,10 +1,11 @@
 # Osyntra BookingPlatform V1
 
-A Core Java HTTP REST backend for the existing guest, property-owner and booking workflows. The application uses Java's built-in `HttpServer`; Spring Boot and the interactive CLI are no longer required.
+A Core Java HTTP REST backend and React frontend for the existing guest, property-owner and booking workflows. The backend uses Java's built-in `HttpServer`; Spring Boot and the interactive CLI are no longer required.
 
 ## V1 functionality
 
 - Register guest or owner accounts, send a ten-minute email activation code, activate accounts and validate login credentials.
+- Sign in as an existing active admin employee. Admins can browse properties; guest/owner actions remain restricted to those account types. No admin management screens or endpoints are implemented.
 - Browse properties and date availability as an activated user.
 - Owners can create, list their own, replace and delete their properties.
 - Guests can create confirmed bookings, view their own history and change booking dates.
@@ -41,8 +42,9 @@ src/main/java/
   dao/                    Prepared SQL, mappings and transactions
   models/                 Reusable application data and price calculations
   helpers/                BCrypt, validation, activation, IDs and email templates
-src/main/resources/db/migration/V1__initial_schema.sql
+src/main/resources/db/migration/  V1 schema, V2 booking references, V3 seeded accounts
 src/test/java/integration/  JUnit configuration, database, service and HTTP tests
+frontend/                  React, TypeScript, Vite and Vitest
 ```
 
 `Main.start` is the **composition root**: it creates each dependency and passes it to the class that needs it. For example, the booking service receives an email sender, and the booking controller receives that service plus an authentication adapter. Tests substitute an email transport that captures messages, without replacing business logic or bypassing activation.
@@ -64,6 +66,7 @@ Set variables in the process environment or your IDE run configuration. No doten
 | `APP_ENV` | Default `dev` | Explicit `test` | Explicit `prod` |
 | `DB_URL` | Default `jdbc:sqlite:data/booking_dev.db`; optional override | Ignored; a new OS temporary directory/database is always allocated | Required, file-based SQLite URL with an absolute path |
 | `PORT` | Default 8080 | Default 8080; 0 chooses an available port | Default 8080 |
+| `TRUSTED_FRONTEND_ORIGINS` | Comma-separated exact browser origins; empty rejects supplied origins | Tests supply explicit origins where needed | Set to the frontend's exact HTTPS origin |
 | `SMTP_HOST` | Required to deliver email | Tests inject a capture transport | Required |
 | `SMTP_PORT` | Default 587 when SMTP is configured | Same | Default 587 |
 | `SMTP_USERNAME` | SMTP account/from address | Tests do not contact SMTP | Required |
@@ -88,7 +91,29 @@ Startup performs:
 5. Bind and start the HTTP server.
 6. Log the listening address.
 
-An initialization or migration error prevents startup. Flyway records successful versions/checksums in `flyway_schema_history`; restarting does not rerun V1. The original V1 script has not been changed by this conversion. Future schema changes belong in new files, such as `V2__description.sql`. Automatic clean/reset and automatic baselining are not enabled.
+An initialization or migration error prevents startup. Flyway records successful versions/checksums in `flyway_schema_history`; restarting does not rerun applied versions. Existing migration files must not be edited after application. Future changes belong in the next numbered migration. Automatic clean/reset and automatic baselining are not enabled.
+
+| Migration | Purpose |
+|---|---|
+| `V1__initial_schema.sql` | Original tables and relationships |
+| `V2__booking_references.sql` | Backfill six-digit references from `100001`; allocate future values using SQLite triggers and a persistent sequence, retaining UUID relationships |
+| `V3__seed_user_accounts.sql` | Insert activated admin, guest and property-owner accounts with BCrypt password hashes |
+
+V2 is present at the database layer, but the current Java booking model, API and emails still use `bookingId`. Customer-facing reference integration is incomplete; see the testing limitation below.
+
+### Seeded accounts
+
+V3 creates these activated accounts; login does not require SMTP or another activation email:
+
+| Account type | Name | Email |
+|---|---|---|
+| `ADMIN` | Odane Collins | `odanecollins@live.com` |
+| `GUEST` | John Smith | `john.smith@example.com` |
+| `OWNER` | Phil Collins | `phil.collins@example.com` |
+
+Use the seed credentials supplied during account setup. Passwords are intentionally not repeated here. Admin is represented by an existing employee record with role `ADMIN`; terminated employees cannot sign in through this path. Public registration still accepts only `GUEST` and `OWNER`.
+
+V3 is in the shared migration directory and therefore runs in every environment, including production. Do not deploy these known seed credentials unchanged. Conflicting emails or subtype IDs cause migration failure instead of overwriting existing accounts. Already-applied V3 does not reset passwords on restart.
 
 Every application connection enables foreign keys and a five-second busy timeout. Account registration saves the base user and subtype in one transaction. Booking writes acquire SQLite's IMMEDIATE transaction before checking overlap and writing, preventing two concurrent requests from confirming the same dates. Foreign keys prevent deleting a property referenced by bookings or reviews; the API returns 409.
 
@@ -112,6 +137,7 @@ Development configuration in PowerShell:
 ```powershell
 $env:APP_ENV = "dev"
 $env:PORT = "8080"
+$env:TRUSTED_FRONTEND_ORIGINS = "http://127.0.0.1:5173,http://localhost:5173"
 $env:SMTP_HOST = "your-smtp-host"
 $env:SMTP_USERNAME = "your-mailbox@example.com"
 $env:SMTP_PASSWORD = "your-app-password"
@@ -130,15 +156,41 @@ mvn test
 
 JUnit starts the HTTP server on port 0 and uses Java `HttpClient`. Tests use isolated temporary databases, captured email messages and real DAOs. They verify that the existing `data/booking_dev.db` and `data/booking_test.db` bytes remain unchanged. SMTP connectivity to a real provider is not tested.
 
+**Current verification limitation:** `mvn test` / `mvn clean verify` are blocked by `BookingReferenceTest` calling missing `Booking.setBookingReference` / `getBookingReference` methods. During login-fix verification, a temporary Maven configuration excluding only that test passed all 22 remaining backend tests and produced a packaged JAR. This does not constitute a passing full build. The frontend passed 30 tests and its production build. These are recorded results from the login fix, not checks rerun for this documentation update.
+
+### React frontend
+
+In a second PowerShell terminal:
+
+```powershell
+cd frontend
+npm.cmd ci
+npm.cmd run dev
+# Verification:
+npm.cmd test
+npm.cmd run build
+```
+
+Open the URL printed by Vite. Its proxy forwards `/api` and `/health` to the backend, preserving the browser's `Origin` header. Set `TRUSTED_FRONTEND_ORIGINS` in the **backend process**, then restart it. Scheme, hostname and port must match exactly: `http://localhost:5173` and `http://127.0.0.1:5173` are different origins. Do not include a path or trailing slash.
+
+The frontend uses the login response's `accountType` to select guest, owner or admin navigation. Credentials stay in React memory; refreshing or logging out requires signing in again. No admin dashboard is implemented.
+
+### Login troubleshooting
+
+- **401 / Invalid credentials:** check the email/password, the active `APP_ENV`/`DB_URL`, and whether startup applied V3 to that database. An old JAR may not contain V3 or the admin login fix; rebuild and restart the backend. Do not delete the database to resolve this.
+- **403 / Frontend origin is not trusted:** configure the exact browser origin as above and restart. This check runs before authentication or registration; it is unrelated to SMTP or activation.
+- **403 / Account must be activated:** newly registered accounts require their emailed code; the V3 seed accounts are already activated.
+- **403 on guest/owner endpoints as admin:** expected authorization behavior. Admin login does not grant booking or property ownership privileges.
+
 ## Authentication and security
 
-V1 has no sessions, JWTs, refresh tokens or new roles. The CLI already checked an email/password with BCrypt and selected guest or owner behavior. HTTP Basic transports those same credentials on each protected request, and the service checks account activation and the persisted subtype. Login returns safe account information; it does not return a token. To stop authenticating, the client stops sending credentials.
+V1 has no server sessions, JWTs, refresh tokens or new roles. HTTP Basic transports email/password credentials on each protected request, and the service checks BCrypt, activation and the persisted subtype. Supported login types are `GUEST`, `OWNER` and the existing active `ADMIN` employee role. Login returns safe account information including `accountType`; it does not return a token. To stop authenticating, the client stops sending credentials.
 
 All property and booking routes require an activated account. Owners can mutate only their own properties; guests can view/change only their own bookings. Server-side code assigns IDs, ownership, prices, booking status and payment status. Clients cannot submit these fields to override them.
 
 Activation requires the email, registration password and emailed code. It expires after ten minutes. If registration email delivery fails, the inactive account remains persisted. Retry the same registration with the original password to issue a fresh code; retrying does not overwrite profile information. Activated accounts cannot be registered again.
 
-Request bodies are limited to 65,536 bytes. JSON and date errors are controlled responses. Password input is limited to BCrypt's 72-byte maximum. SQL uses prepared parameters. Browser-originated writes with an `Origin` header are rejected to prevent Basic-auth CSRF; no browser/CORS workflow is offered in V1. A production proxy should provide HTTPS, request timeouts and rate limits. The built-in server is not a complete production security gateway.
+Request bodies are limited to 65,536 bytes. JSON and date errors are controlled responses. Password input is limited to BCrypt's 72-byte maximum. SQL uses prepared parameters. Any supplied `Origin` must match `TRUSTED_FRONTEND_ORIGINS`; an empty allowlist rejects requests carrying that header. Requests without Origin remain supported for non-browser clients. The frontend uses a same-origin proxy; direct cross-origin CORS/preflight support is not implemented. A production proxy should provide HTTPS, request timeouts and rate limits. The built-in server is not a complete production security gateway.
 
 ## Implemented endpoints
 
@@ -186,7 +238,7 @@ $registration = @{
   contactNum = "8765550100"
 } | ConvertTo-Json
 Invoke-RestMethod "$base/api/v1/auth/register" -Method Post -ContentType "application/json" -Body $registration
-# 201: {"userId":1,"email":"owner@example.com","firstName":"Jane","lastName":"Owner","activated":false}
+# 201: {"userId":4,"email":"owner@example.com","firstName":"Jane","lastName":"Owner","activated":false,"accountType":"OWNER"}
 
 $activation = @{ email="owner@example.com"; password="ExamplePass1!"; code="CODE_FROM_EMAIL" } | ConvertTo-Json
 Invoke-RestMethod "$base/api/v1/auth/activate" -Method Post -ContentType "application/json" -Body $activation
@@ -194,7 +246,7 @@ Invoke-RestMethod "$base/api/v1/auth/activate" -Method Post -ContentType "applic
 
 $login = @{ email="owner@example.com"; password="ExamplePass1!" } | ConvertTo-Json
 Invoke-RestMethod "$base/api/v1/auth/login" -Method Post -ContentType "application/json" -Body $login
-# 200: account fields as above, with activated=true
+# 200: {"userId":4,"email":"owner@example.com","firstName":"Jane","lastName":"Owner","activated":true,"accountType":"OWNER"}
 
 $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("owner@example.com:ExamplePass1!"))
 $ownerHeaders = @{ Authorization="Basic $encoded" }
@@ -253,6 +305,6 @@ The dates/timestamps and IDs in this response are examples. JSON numbers do not 
 - Registration delivery failure leaves a pending account; retry the same credentials to resend. No password reset, token/session management or dedicated resend endpoint was added.
 - SQLite permits one writer at a time. Availability reads all bookings; lists are not paginated. Database contention can return a controlled server error.
 - The old database might contain inconsistent data from partial CLI writes. The conversion does not delete, repair or baseline such data automatically.
-- Existing employee/review DAOs and other model/stub classes remain outside the HTTP surface and are not represented as completed modules.
+- Employee administration and review workflows remain outside the HTTP surface. Employee lookup is used for admin authentication only.
 - Existing repository tracking of database/build files predates this work. Ignore rules do not untrack already tracked files; no Git index reset or history rewrite was performed.
-- Future product work explicitly excluded from V1: cancellations/refunds, payment processing, new booking policies, reservation inventory/locks, reports, review/verification workflows, new roles, frontend, microservices, Docker/cloud deployment and new integrations.
+- Future product work explicitly excluded from V1: cancellations/refunds, payment processing, new booking policies, reservation inventory/locks, reports, review/verification workflows, new roles, admin management screens, microservices, Docker/cloud deployment and new integrations.
