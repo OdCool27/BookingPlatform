@@ -1,379 +1,84 @@
 package dao;
 
-import helpers.DBUtil;
+import config.DBUtil;
 import models.Booking;
-
 import java.sql.*;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.logging.Level;
-
-import static app.Main.LOGGER;
+import java.util.*;
 
 public class BookingDAO {
+    private static final String INSERT = "INSERT INTO Bookings(bookingID,guestID,propertyID,arrivalDate,departureDate,baseCharge,gct,tef,gart,totalCharge,status,payStatus,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+    private static final String UPDATE = "UPDATE Bookings SET bookingID=?,guestID=?,propertyID=?,arrivalDate=?,departureDate=?,baseCharge=?,gct=?,tef=?,gart=?,totalCharge=?,status=?,payStatus=?,createdAt=?,updatedAt=? WHERE bookingID=?";
 
-    //CREATES/INITIALIZES BOOKING TABLE
-    public static boolean initializeBookingTable(){
-
-        String tableStmt = "CREATE TABLE IF NOT EXISTS Bookings(" +
-                "bookingID VARCHAR(10) PRIMARY KEY," +
-                "guestID VARCHAR(12) NOT NULL REFERENCES Guests(guestID)," +
-                "propertyID VARCHAR(12) NOT NULL REFERENCES Properties(propertyID)," +
-                "arrivalDate DATE NOT NULL, " +
-                "departureDate DATE NOT NULL, " +
-                "baseCharge DECIMAL(10,2)," +
-                "gct DECIMAL(10,2)," +
-                "tef DECIMAL(10,2)," +
-                "gart DECIMAL(10,2)," +
-                "totalCharge DECIMAL(10,2)," +
-                "status VARCHAR(12)," +
-                "payStatus VARCHAR(12)," +
-                "createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP," +
-                "updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
-                ");";
-
-        try(
-                Connection dbConn = DBUtil.getConnection();//CREATE CONNECTION OBJECT AND CONNECTS TO DATABASE
-                Statement dbStmt = dbConn.createStatement() //CREATE STATEMENT OBJECT
-                ){
-
-            dbStmt.executeUpdate(tableStmt);//EXECUTES STATEMENT
-            LOGGER.info("Table 'Bookings' created or already exists.");
-            return true;
-
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Failed to initialize table", e);
-            return false;
-        }
-
+    private static void bind(PreparedStatement s, Booking b) throws SQLException {
+        s.setString(1,b.getBookingID()); s.setString(2,b.getGuestID()); s.setString(3,b.getPropertyID());
+        s.setString(4,b.getArrivalDate().toString()); s.setString(5,b.getDepartureDate().toString());
+        s.setBigDecimal(6,b.getBaseCharge()); s.setBigDecimal(7,b.getGct()); s.setBigDecimal(8,b.getTef());
+        s.setBigDecimal(9,b.getGart()); s.setBigDecimal(10,b.getTotalCharge());
+        s.setString(11,b.getStatus().name()); s.setString(12,b.getPayStatus().name());
+        s.setString(13,b.getCreatedAt().toString()); s.setString(14,b.getUpdatedAt().toString());
+    }
+    private static Booking map(ResultSet r) throws SQLException {
+        // Constructor preserves the stored price snapshot rather than recalculating historical bookings.
+        return new Booking(r.getString("bookingID"),r.getString("guestID"),r.getString("propertyID"),
+                SQLiteValues.date(r.getString("arrivalDate")),SQLiteValues.date(r.getString("departureDate")),
+                r.getBigDecimal("baseCharge"),r.getBigDecimal("gct"),r.getBigDecimal("tef"),
+                r.getBigDecimal("gart"),r.getBigDecimal("totalCharge"),Booking.Status.valueOf(r.getString("status")),
+                Booking.PaymentStatus.valueOf(r.getString("payStatus")),SQLiteValues.timestamp(r.getString("createdAt")),
+                SQLiteValues.timestamp(r.getString("updatedAt")));
     }
 
-
-    //<---------------------------------   SAVE METHOD -------------------------------------------------->
-
-    //SAVES BOOKING OBJECT TO DB
-    public static boolean saveBooking(Booking b) {
-
-        if (initializeBookingTable()) {
-
-            String sql = "INSERT INTO Bookings(bookingID, guestID, propertyID, arrivalDate, departureDate," +
-                    " baseCharge, gct, tef, gart, totalCharge, status, payStatus, createdAt, updatedAt) " +
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
-
-            try (
-                    Connection conn = DBUtil.getConnection();
-                    PreparedStatement stmt = conn.prepareStatement(sql);
-            ){
-                stmt.setString(1,b.getBookingID());
-                stmt.setString(2, b.getGuestID());
-                stmt.setString(3, b.getPropertyID());
-                stmt.setDate(4, Date.valueOf(b.getArrivalDate()));
-                stmt.setDate(5, Date.valueOf(b.getDepartureDate()));
-                stmt.setBigDecimal(6,b.getBaseCharge());
-                stmt.setBigDecimal(7,b.getGct());
-                stmt.setBigDecimal(8,b.getTef());
-                stmt.setBigDecimal(9,b.getGart());
-                stmt.setBigDecimal(10, b.getTotalCharge());
-                stmt.setString(11, b.getStatus().toString());
-                stmt.setString(12, b.getPayStatus().toString());
-                stmt.setTimestamp(13, Timestamp.valueOf(b.getCreatedAt()));
-                stmt.setTimestamp(14, Timestamp.valueOf(b.getUpdatedAt()));
-
-                int rowsInserted = stmt.executeUpdate();
-                return rowsInserted > 0;
-
-            }catch(SQLException e){
-                LOGGER.log(Level.SEVERE, "Error inserting user into database", e);
-                return false;
-            }
-
-        }else{
-            LOGGER.log(Level.SEVERE, "Database Initialization Failed");
-            return false;
-        }
-    }
-
-    //<---------------------------------   READ METHODS -------------------------------------------------->
-
-    //RETRIEVES A BOOKING OBJECT FROM DB USING BOOKING ID
-    public static Booking retrieveBookingByBookingID(String bookingID){
-
-        String sql = "SELECT * FROM Bookings WHERE bookingID = ?";
-
-        try(Connection dbConn = DBUtil.getConnection();
-            PreparedStatement stmt = dbConn.prepareStatement(sql)
-        ){
-            stmt.setString(1, bookingID);
-
-            try(ResultSet rs = stmt.executeQuery()){
-                if(rs.next()){
-                    Booking b = new Booking();
-                    b.setBookingID(rs.getString("bookingID"));
-                    b.setGuestID(rs.getString("guestID"));
-                    b.setPropertyID(rs.getString("propertyID"));
-                    b.setArrivalDate(rs.getDate("arrivalDate").toLocalDate());
-                    b.setDepartureDate(rs.getDate("departureDate").toLocalDate());
-                    b.setBaseCharge(rs.getBigDecimal("baseCharge"));
-                    b.setGct(rs.getBigDecimal("gct"));
-                    b.setTef(rs.getBigDecimal("tef"));
-                    b.setGart(rs.getBigDecimal("gart"));
-                    b.setTotalCharge(rs.getBigDecimal("totalCharge"));
-                    b.setStatus(Booking.Status.valueOf(rs.getString("status")));
-                    b.setPayStatus(Booking.PaymentStatus.valueOf(rs.getString("payStatus")));
-                    b.setCreatedAt(rs.getTimestamp("createdAt").toLocalDateTime());
-                    b.setUpdatedAt(rs.getTimestamp("updatedAt").toLocalDateTime());
-
-                    return b;
-                }else{
-                    return null;
+    /** IMMEDIATE transactions reserve SQLite's write access before checking availability.
+     * This closes the check-then-insert race without adding a reservation/locking business feature.
+     * The original inclusive overlap rule is retained, including shared arrival/departure dates.
+     */
+    public static boolean saveIfAvailable(Booking b, boolean update) {
+        try (Connection c = DBUtil.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                try (PreparedStatement s = c.prepareStatement("SELECT * FROM Bookings WHERE propertyID=? AND status='CONFIRMED' AND bookingID<>?")) {
+                    s.setString(1,b.getPropertyID()); s.setString(2,b.getBookingID());
+                    try (ResultSet r = s.executeQuery()) {
+                        while(r.next()) {
+                            Booking existing = map(r);
+                            if (!(existing.getArrivalDate().isAfter(b.getDepartureDate()) || existing.getDepartureDate().isBefore(b.getArrivalDate()))) {
+                                c.rollback(); return false;
+                            }
+                        }
+                    }
                 }
-            }
-
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Database Connection Failed" + e);
-            return null;
-        }
-    }
-
-
-    //RETRIEVES BOOKING OBJECTS FROM DB USING GUEST ID
-    public static List<Booking> retrieveBookingByGuestID(String guestID){
-        String sql = "SELECT * FROM Bookings WHERE guestID = ?";
-
-        try(Connection dbConn = DBUtil.getConnection();
-            PreparedStatement stmt = dbConn.prepareStatement(sql)
-        ){
-            stmt.setString(1, guestID);
-
-            try(ResultSet rs = stmt.executeQuery()){
-
-                List<Booking> bookingList = new ArrayList<>();
-
-                while(rs.next()){
-                    Booking b = new Booking();
-                    b.setBookingID(rs.getString("bookingID"));
-                    b.setGuestID(rs.getString("guestID"));
-                    b.setPropertyID(rs.getString("propertyID"));
-                    b.setArrivalDate(rs.getDate("arrivalDate").toLocalDate());
-                    b.setDepartureDate(rs.getDate("departureDate").toLocalDate());
-                    b.setBaseCharge(rs.getBigDecimal("baseCharge"));
-                    b.setGct(rs.getBigDecimal("gct"));
-                    b.setTef(rs.getBigDecimal("tef"));
-                    b.setGart(rs.getBigDecimal("gart"));
-                    b.setTotalCharge(rs.getBigDecimal("totalCharge"));
-                    b.setStatus(Booking.Status.valueOf(rs.getString("status")));
-                    b.setPayStatus(Booking.PaymentStatus.valueOf(rs.getString("payStatus")));
-                    b.setCreatedAt(rs.getTimestamp("createdAt").toLocalDateTime());
-                    b.setUpdatedAt(rs.getTimestamp("updatedAt").toLocalDateTime());
-
-                    bookingList.add(b);
-
+                try (PreparedStatement s = c.prepareStatement(update ? UPDATE : INSERT)) {
+                    bind(s,b); if(update) s.setString(15,b.getBookingID());
+                    if(s.executeUpdate() != 1) { c.rollback(); return false; }
                 }
-                return bookingList;
+                c.commit(); return true;
+            } catch(SQLException | RuntimeException e) { c.rollback(); throw e; }
+        } catch(SQLException e) { throw new DataAccessException(e); }
+    }
+    public static boolean saveBooking(Booking b) { return saveIfAvailable(b,false); }
+    public static boolean updateBooking(Booking b) { return saveIfAvailable(b,true); }
+    public static Booking retrieveBookingByBookingID(String id) {
+        List<Booking> list = find("bookingID",id);
+        return list.isEmpty() ? null : list.getFirst();
+    }
+    public static List<Booking> retrieveBookingByGuestID(String id) { return find("guestID",id); }
+    public static List<Booking> retrieveBookingByPropertyID(String id) { return find("propertyID",id); }
+    public static List<Booking> retrieveAllBookings() { return find(null,null); }
+    private static List<Booking> find(String column,String id) {
+        try(Connection c = DBUtil.getConnection(); PreparedStatement s = c.prepareStatement("SELECT * FROM Bookings" + (column == null ? "" : " WHERE " + column + "=?"))) {
+            if(column != null) s.setString(1,id);
+            try(ResultSet r = s.executeQuery()) {
+                List<Booking> result = new ArrayList<>();
+                while(r.next()) result.add(map(r));
+                return result;
             }
-
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Database Connection Failed" + e);
-            return null;
-        }
+        } catch(SQLException e) { throw new DataAccessException(e); }
     }
-
-
-    //RETRIEVES BOOKING OBJECTS FROM DB USING PROPERTY ID
-    public static List<Booking> retrieveBookingByPropertyID(String propertyID){
-        String sql = "SELECT * FROM Bookings WHERE propertyID = ?";
-
-        try(Connection dbConn = DBUtil.getConnection();
-            PreparedStatement stmt = dbConn.prepareStatement(sql)
-        ){
-            stmt.setString(1, propertyID);
-
-            try(ResultSet rs = stmt.executeQuery()){
-
-                List<Booking> bookingList = new ArrayList<>();
-
-                while(rs.next()){
-                    Booking b = new Booking();
-                    b.setBookingID(rs.getString("bookingID"));
-                    b.setGuestID(rs.getString("guestID"));
-                    b.setPropertyID(rs.getString("propertyID"));
-                    b.setArrivalDate(rs.getDate("arrivalDate").toLocalDate());
-                    b.setDepartureDate(rs.getDate("departureDate").toLocalDate());
-                    b.setBaseCharge(rs.getBigDecimal("baseCharge"));
-                    b.setGct(rs.getBigDecimal("gct"));
-                    b.setTef(rs.getBigDecimal("tef"));
-                    b.setGart(rs.getBigDecimal("gart"));
-                    b.setTotalCharge(rs.getBigDecimal("totalCharge"));
-                    b.setStatus(Booking.Status.valueOf(rs.getString("status")));
-                    b.setPayStatus(Booking.PaymentStatus.valueOf(rs.getString("payStatus")));
-                    b.setCreatedAt(rs.getTimestamp("createdAt").toLocalDateTime());
-                    b.setUpdatedAt(rs.getTimestamp("updatedAt").toLocalDateTime());
-
-                    bookingList.add(b);
-                }
-                return bookingList;
-            }
-
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Database Connection Failed" + e);
-            return null;
-        }
+    public static boolean deleteBookingByBookingID(String id) { return delete("bookingID",id); }
+    public static boolean deleteBookingByPropertyID(String id) { return delete("propertyID",id); }
+    public static boolean deleteBookingByGuestID(String id) { return delete("guestID",id); }
+    private static boolean delete(String column,String id) {
+        try(Connection c = DBUtil.getConnection(); PreparedStatement s = c.prepareStatement("DELETE FROM Bookings WHERE " + column + "=?")) {
+            s.setString(1,id); return s.executeUpdate() > 0;
+        } catch(SQLException e) { throw new DataAccessException(e); }
     }
-
-
-    //RETRIEVES ALL BOOKING OBJECTS FROM DB
-    public static List<Booking> retrieveAllBookings(){
-
-        String sql = "SELECT * FROM Bookings;";
-
-        try(Connection dbConn = DBUtil.getConnection();
-            PreparedStatement dbStmt = dbConn.prepareStatement(sql)){
-
-            ResultSet rs = dbStmt.executeQuery();
-
-            List<Booking> bookingList = new ArrayList<>();
-
-            while (rs.next()){
-                Booking b = new Booking();
-                b.setBookingID(rs.getString("bookingID"));
-                b.setGuestID(rs.getString("guestID"));
-                b.setPropertyID(rs.getString("propertyID"));
-                b.setArrivalDate(rs.getDate("arrivalDate").toLocalDate());
-                b.setDepartureDate(rs.getDate("departureDate").toLocalDate());
-                b.setBaseCharge(rs.getBigDecimal("baseCharge"));
-                b.setGct(rs.getBigDecimal("gct"));
-                b.setTef(rs.getBigDecimal("tef"));
-                b.setGart(rs.getBigDecimal("gart"));
-                b.setTotalCharge(rs.getBigDecimal("totalCharge"));
-                b.setStatus(Booking.Status.valueOf(rs.getString("status")));
-                b.setPayStatus(Booking.PaymentStatus.valueOf(rs.getString("payStatus")));
-                b.setCreatedAt(rs.getTimestamp("createdAt").toLocalDateTime());
-                b.setUpdatedAt(rs.getTimestamp("updatedAt").toLocalDateTime());
-
-                bookingList.add(b);
-            }
-
-            return bookingList;
-
-
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Database Connection Failed" + e);
-            return null;
-        }
-    }
-
-    //<---------------------------------   UPDATE METHOD -------------------------------------------------->
-
-    //UPDATES BOOKING OBJECT IN DB
-    public static boolean updateBooking(Booking b){
-        String sql = "UPDATE Bookings "+
-                "SET bookingID = ?, " +
-                "guestID = ?, " +
-                "propertyID = ?, " +
-                "arrivalDate = ?, " +
-                "departureDate = ?, " +
-                "baseCharge = ?, " +
-                "gct = ?, " +
-                "tef = ?, " +
-                "gart = ?, " +
-                "totalCharge = ?, " +
-                "status = ?, " +
-                "payStatus = ?, " +
-                "createdAt = ?, " +
-                "updatedAt = ?, " +
-                "WHERE bookingID = ?";
-
-        try(Connection dbConn = DBUtil.getConnection();
-            PreparedStatement stmt = dbConn.prepareStatement(sql)){
-
-            stmt.setString(1,b.getBookingID());
-            stmt.setString(2, b.getGuestID());
-            stmt.setString(3, b.getPropertyID());
-            stmt.setDate(4, Date.valueOf(b.getArrivalDate()));
-            stmt.setDate(5, Date.valueOf(b.getDepartureDate()));
-            stmt.setBigDecimal(6,b.getBaseCharge());
-            stmt.setBigDecimal(7,b.getGct());
-            stmt.setBigDecimal(8,b.getTef());
-            stmt.setBigDecimal(9,b.getGart());
-            stmt.setBigDecimal(10, b.getTotalCharge());
-            stmt.setString(11, b.getStatus().toString());
-            stmt.setString(12, b.getPayStatus().toString());
-            stmt.setTimestamp(13, Timestamp.valueOf(b.getCreatedAt()));
-            stmt.setTimestamp(14, Timestamp.valueOf(b.getUpdatedAt()));
-
-            stmt.setString(15, b.getBookingID());
-
-            int rowsUpdated = stmt.executeUpdate();
-            return rowsUpdated > 0;
-
-        }catch (SQLException e){
-            LOGGER.log(Level.SEVERE, "Database Connection Failed " + e);
-            return false;
-        }
-
-    }
-
-
-    //<---------------------------------   DELETE METHODS -------------------------------------------------->
-
-    //DELETES BOOKING OBJECT FROM DB USING BOOKING ID
-    public static boolean deleteBookingByBookingID(String bookingID){
-
-        String sql = "DELETE FROM Bookings WHERE bookingID = ?";
-
-        try (Connection conn = DBUtil.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, bookingID);
-
-            int rowsDeleted = stmt.executeUpdate();
-            return rowsDeleted > 0;
-
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Error deleting user from database", e);
-            return false;
-        }
-    }
-
-
-    //DELETES BOOKING OBJECT FROM DB USING PROPERTY ID
-    public static boolean deleteBookingByPropertyID(String propertyID){
-
-        String sql = "DELETE FROM Bookings WHERE propertyID = ?";
-
-        try (Connection conn = DBUtil.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, propertyID);
-
-            int rowsDeleted = stmt.executeUpdate();
-            return rowsDeleted > 0;
-
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Error deleting user from database", e);
-            return false;
-        }
-    }
-
-
-    //DELETES BOOKING OBJECT FROM DB USING PROPERTY ID
-    public static boolean deleteBookingByGuestID(String guestID){
-
-        String sql = "DELETE FROM Bookings WHERE guestID = ?";
-
-        try (Connection conn = DBUtil.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, guestID);
-
-            int rowsDeleted = stmt.executeUpdate();
-            return rowsDeleted > 0;
-
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Error deleting user from database", e);
-            return false;
-        }
-    }
-
 }
