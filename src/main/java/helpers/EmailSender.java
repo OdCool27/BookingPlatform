@@ -1,44 +1,20 @@
 package helpers;
-
-
-import dao.PropertyDAO;
 import models.Booking;
 import models.Property;
 import services.EmailService;
+import services.MailSender;
 
+/** Templates stay reusable; injecting the transport lets tests capture mail without contacting SMTP. */
 public class EmailSender {
-    public void sendTestEmail(String email){
-        EmailService e = new EmailService();
-        String content = "TEST!";
-        String subject = "VC TEST EMAIL";
-        e.sendEmail(email, subject, content);
+    private final MailSender mail;
+    public EmailSender() { this(new EmailService()); }
+    public EmailSender(MailSender mail) { this.mail = mail; }
+    public void sendActivationEmail(String to, String code) {
+        mail.sendEmail(to,"Osyntra - Account Activation","Your activation code is " + code + ". It expires in 10 minutes.");
     }
-
-    public void sendActivationEmail(String toEmail, String activationCode) {
-        EmailService e = new EmailService();
-        String content = "Greetings,\n"
-                + "Below contains the activation code to active your Vapfumi Connect Guest Account.\n"
-                + "If you did not sign up on Vapfumi Connect, kindly disregard this email.\n"
-                + "Activation Code: " + activationCode
-                + "\n\nRegards,\n"
-                +"Vapfumi Connect Support.";
-        e.sendEmail(toEmail, "Vapfumi Connect - Account Activation", content);
+    public void sendBookingConfirmationEmail(String to, Booking booking, Property property) {
+        mail.sendEmail(to,"Osyntra - Booking Confirmation " + booking.getBookingID(),
+                "Booking " + booking.getBookingID() + " at " + property.getPropertyName() + "\n"
+                + booking.getArrivalDate() + " to " + booking.getDepartureDate() + "\nTotal: " + booking.getTotalCharge());
     }
-
-    public void sendBookingConfirmationEmail(String toEmail, Booking booking, Property p){
-        EmailService e =  new EmailService();
-        String content = booking.toString();
-
-        e.sendEmail(toEmail, "Vapfumi Connect - Booking Confirmation# " + booking.getBookingID(), content);
-    }
-
-
-
-    //TEST
-    public static void main(String[] args) {
-        EmailSender e = new EmailSender();
-        e.sendTestEmail("odanecollins@gmail.com");
-    }
-
 }
-

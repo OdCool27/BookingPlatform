@@ -1,66 +1,71 @@
 package services;
 
-import dao.BookingDAO;
-import dao.PropertyDAO;
+import dao.*;
 import helpers.EmailSender;
-import models.Booking;
-import models.Guest;
-import models.Property;
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
-
+import models.*;
+import java.math.BigDecimal;
+import java.time.*;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+import java.util.logging.Logger;
+import static services.ServiceException.Reason.*;
 
 public class BookingService {
-	//private BookingDAO bookingDAO
-	
+    private final EmailSender email;
+    public BookingService() { this(new EmailSender()); }
+    public BookingService(EmailSender email) { this.email = email; }
 
-	//CHECKS IF BOOKING DATE IS AVAILABLE
-	public List<Property> listAvailableProperties(LocalDate startDate, LocalDate endDate) {
-		List<Booking> bookingList = BookingDAO.retrieveAllBookings();
-		List<Property> propertyList = PropertyDAO.retrieveAllProperties();
-		List<String> unavailablePropertyID = new ArrayList<>();
-
-		if (!bookingList.isEmpty()) {
-
-			for (Booking book : bookingList) {
-				if (!(book.getArrivalDate().isAfter(endDate) || book.getDepartureDate().isBefore(startDate)) && book.getStatus().equals(Booking.Status.CONFIRMED)) {
-					unavailablePropertyID.add(book.getPropertyID());
-				}
-			}
-
-			return propertyList.stream()
-					.filter(prop -> !unavailablePropertyID.contains(prop.getPropertyID()))
-					.collect(Collectors.toList());
-		}
-		return propertyList;
-	}
-
-	
-	//CREATES A BOOKING
-	public boolean confirmBooking(Booking book, Guest g, Property property) {
-		List<Property> availableProperties = listAvailableProperties(book.getArrivalDate(), book.getDepartureDate());//I need to adjust to return available properties
-
-		Property bookedProperty = PropertyDAO.retrievePropertyByPropertyID(property.getPropertyID());
-
-		if(availableProperties.contains(bookedProperty)){
-			BookingDAO.saveBooking(book);
-			EmailSender e = new EmailSender();
-			e.sendBookingConfirmationEmail(g.getEmail(), book, property);
-			return true;
-
-		}else{
-			System.out.println("Property is not available");
-			return false;
-		}
-	}
-	
-	
-	
-	
-	//MODIFY BOOKING - Implement code to check if it is within modification period
-	
-	//CANCEL BOOKING -  Implement code to check if it is within cancellation period
-
+    public List<Property> available(User actor,LocalDate start,LocalDate end) {
+        AuthService.requireActive(actor); return listAvailableProperties(start,end);
+    }
+    public List<Property> listAvailableProperties(LocalDate start,LocalDate end) {
+        Validation.dates(start,end);
+        List<Booking> bookings = BookingDAO.retrieveAllBookings();
+        return PropertyDAO.retrieveAllProperties().stream().filter(p -> bookings.stream().noneMatch(b ->
+                b.getPropertyID().equals(p.getPropertyID()) && b.getStatus() == Booking.Status.CONFIRMED &&
+                !(b.getArrivalDate().isAfter(end) || b.getDepartureDate().isBefore(start)))).toList();
+    }
+    public List<Booking> history(User actor) {
+        return BookingDAO.retrieveBookingByGuestID(AuthService.guest(actor).getGuestID());
+    }
+    public Booking find(User actor,String id) {
+        Guest g = AuthService.guest(actor);
+        Booking b = BookingDAO.retrieveBookingByBookingID(id);
+        if(b == null) throw new ServiceException(NOT_FOUND,"Booking not found");
+        if(!b.getGuestID().equals(g.getGuestID())) throw new ServiceException(FORBIDDEN,"Booking belongs to another guest");
+        return b;
+    }
+    public Booking create(User actor,String propertyId,LocalDate arrival,LocalDate departure) {
+        Guest guest = AuthService.guest(actor); Validation.dates(arrival,departure);
+        Validation.text(propertyId,"propertyId",100);
+        Property p = PropertyDAO.retrievePropertyByPropertyID(propertyId);
+        if(p == null) throw new ServiceException(NOT_FOUND,"Property not found");
+        Booking b = new Booking();
+        b.setBookingID("B-" + UUID.randomUUID());
+        b.setGuestID(guest.getGuestID()); b.setPropertyID(propertyId);
+        price(b,p,arrival,departure);
+        if(!confirmBooking(b,guest,p)) throw new ServiceException(CONFLICT,"Property is not available for these dates");
+        return b;
+    }
+    public Booking changeDates(User actor,String id,LocalDate arrival,LocalDate departure) {
+        Booking b = find(actor,id); Validation.dates(arrival,departure);
+        Property p = PropertyDAO.retrievePropertyByPropertyID(b.getPropertyID());
+        if(p == null) throw new ServiceException(NOT_FOUND,"Property not found");
+        price(b,p,arrival,departure); b.setUpdatedAt(LocalDateTime.now());
+        if(!BookingDAO.updateBooking(b)) throw new ServiceException(CONFLICT,"Property is not available for these dates");
+        return b;
+    }
+    private static void price(Booking b,Property p,LocalDate arrival,LocalDate departure) {
+        b.setArrivalDate(arrival); b.setDepartureDate(departure);
+        b.setBaseCharge(p.getBaseRate().multiply(BigDecimal.valueOf(ChronoUnit.DAYS.between(arrival,departure))));
+    }
+    private boolean confirmBooking(Booking b,Guest guest,Property p) {
+        Validation.dates(b.getArrivalDate(),b.getDepartureDate());
+        if(!BookingDAO.saveBooking(b)) return false;
+        // Email is an existing side effect. A transport outage must not turn a committed booking
+        // into an apparent failure and encourage clients to submit duplicate bookings.
+        try { email.sendBookingConfirmationEmail(guest.getEmail(),b,p); }
+        catch(ServiceException e) { Logger.getLogger(BookingService.class.getName()).warning("Booking saved; confirmation email delivery failed"); }
+        return true;
+    }
 }

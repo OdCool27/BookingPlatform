@@ -1,6 +1,5 @@
 package models;
 
-import dao.PropertyDAO;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -59,10 +58,10 @@ public class Booking {
 		this.arrivalDate = arrivalDate;
 		this.departureDate = departureDate;
 		this.baseCharge = baseCharge;
-		this.gct = calculateGCT();
-		this.tef = calculateTEF();
-		this.gart = calculateGART();
-		this.totalCharge = calculateTotalCharge();
+		this.gct = gct;
+		this.tef = tef;
+		this.gart = gart;
+		this.totalCharge = totalCharge;
 		this.status = status;
 		this.payStatus = payStatus;
 		this.createdAt = createdAt;
@@ -261,12 +260,7 @@ public class Booking {
 	}
 
 	//RECALCULATE CHARGES
-	public void recalculateCharges(){
-		this.gct = calculateGCT();
-		this.tef = calculateTEF();
-		this.gart = calculateGART();
-		this.totalCharge = calculateTotalCharge();
-	}
+	public void recalculateCharges(){ this.gct = calculateGCT(); this.tef = calculateTEF(); this.gart = calculateGART(); this.totalCharge = calculateTotalCharge(); }
 	
 	//TO STRING METHOD
 	@Override
@@ -274,7 +268,7 @@ public class Booking {
 
 		String output = "\nBooking ID:     " + bookingID + "\n";
 		output += "Guest ID:       " + guestID + "\n";
-		output += "Property:       " + PropertyDAO.retrievePropertyByPropertyID(propertyID).getPropertyName() + " (" + propertyID + ")" + "\n";
+		output += "Property ID:    " + propertyID + "\n";
 		output += "Arrival Date:   " + arrivalDate + "\n";
 		output += "Departure Date: " + departureDate + "\n";
 		output += "Base Charge:    $" + String.format("%.2f", baseCharge) + "\n";

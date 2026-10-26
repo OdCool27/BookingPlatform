@@ -178,8 +178,6 @@ public class User {
 		output += "Password Hash: " + PasswordSecurity.maskPassword(passwordHash) + "\n";
 		output += "Contact Num: " + contactNum + "\n";
 		output += "Activation: " + (isActivated ? "Yes":"No") + "\n";
-		output += "Activation Code: " + activationCode + "\n";
-		output += "Activation Code Expiration: " + activationCodeExpiry + "\n";
 		return output;
 	}
 

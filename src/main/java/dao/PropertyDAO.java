@@ -1,17 +1,13 @@
 package dao;
 
-import helpers.DBUtil;
+import config.DBUtil;
 import models.Address;
-import models.PricingEntry;
 import models.Property;
-import models.Review;
 
-import java.math.BigDecimal;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import static app.Main.LOGGER;
 
@@ -22,46 +18,12 @@ public class PropertyDAO {
 //        private List<Review> reviews;
 //        private List<PricingEntry> priceList;
 
-    //CREATES/INITIALIZES PROPERTIES TABLE IN DB
-    public static boolean initializePropertiesTable(){
-
-        String tableStmt = "CREATE TABLE IF NOT EXISTS Properties( "
-                + "propertyID VARCHAR(13) PRIMARY KEY, "
-                + "ownerID VARCHAR(13) REFERENCES PropertyOwners(ownerID), "
-                + "propertyName VARCHAR(40), "
-                + "description VARCHAR(255), "
-                + "street VARCHAR(100), "
-                + "suite VARCHAR(100), "
-                + "city VARCHAR(100), "
-                + "state VARCHAR(100), "
-                + "postalCode VARCHAR(10), "
-                + "country VARCHAR (100), "
-                + "latitude DOUBLE PRECISION, "
-                + "longitude DOUBLE PRECISION, "
-                + "houseSize DOUBLE PRECISION, "
-                + "landSize DOUBLE PRECISION, "
-                + "baseRate DECIMAL"
-                + ");";
-
-        try(Connection dbConn = DBUtil.getConnection();
-            Statement stmt = dbConn.createStatement()){
-
-            stmt.executeUpdate(tableStmt);
-            LOGGER.info("Table 'Properties' created or already exists.");
-            return true;
-
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "DATABASE CONNECTION FAILED" + e);
-            return false;
-        }
-    }
-
     //--------------------CRUD OPERATIONS-------------------------//
 
     //SAVES PROPERTY TO DB
     public static boolean saveProperty(Property p){
 
-        if (initializePropertiesTable()){
+        {
             String sql = "INSERT INTO Properties (propertyID, ownerID, propertyName, description, street, suite, city, state, postalCode, " +
                     "country, latitude, longitude, houseSize, landSize, baseRate)"
                     + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
@@ -89,14 +51,8 @@ public class PropertyDAO {
                 return rowsInserted > 0;
 
 
-            } catch (SQLException e) {
-                LOGGER.log(Level.SEVERE, "SAVING PROPERTY TO DB FAILED" + e);
-                return false;
-            }
+            } catch (SQLException e) { throw new DataAccessException(e); }
 
-        }else{
-            LOGGER.log(Level.SEVERE, "INITIALIZATION OF PROPERTIES TABLE HAS FAILED");
-            return false;
         }
 
 
@@ -140,10 +96,7 @@ public class PropertyDAO {
                 return null;
             }
 
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "FAILED TO RETRIEVE PROPERTY" + e);
-            return null;
-        }
+        } catch (SQLException e) { throw new DataAccessException(e); }
 
     }
 
@@ -186,10 +139,7 @@ public class PropertyDAO {
 
             return propertyList;
 
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "FAILED TO SAVE PROPERTY" + e);
-            return null;
-        }
+        } catch (SQLException e) { throw new DataAccessException(e); }
 
     }
 
@@ -230,10 +180,7 @@ public class PropertyDAO {
 
             return propertyList;
 
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "FAILED TO RETRIEVE PROPERTY LIST" + e);
-            return null;
-        }
+        } catch (SQLException e) { throw new DataAccessException(e); }
 
     }
 
@@ -282,10 +229,7 @@ public class PropertyDAO {
             int rowsUpdated = stmt.executeUpdate();
             return rowsUpdated > 0;
 
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "FAILED PROPERTY UPDATE");
-            return false;
-        }
+        } catch (SQLException e) { throw new DataAccessException(e); }
     }
 
 
@@ -302,10 +246,7 @@ public class PropertyDAO {
             int rowsDeleted = stmt.executeUpdate();
             return rowsDeleted > 0;
 
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "FAILED PROPERTY DELETION" + e);
-            return false;
-        }
+        } catch (SQLException e) { throw new DataAccessException(e); }
 
     }
 
